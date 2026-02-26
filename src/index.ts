@@ -35,6 +35,12 @@ async function processAudio(
     return;
   }
 
+  if (!transcribed.trim()) {
+    logger.info('Empty transcript — aborting');
+    onDone();
+    return;
+  }
+
   logger.startSpinner('Formatting...');
   let formatted: string;
   try {
