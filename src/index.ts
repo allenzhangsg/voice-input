@@ -4,6 +4,7 @@ import { AudioRecorder } from './services/recorder';
 import { TranscriptionService } from './services/transcription';
 import { FormatterService } from './services/formatter';
 import { TextInserter } from './services/inserter';
+import { getActiveAppName } from './services/window';
 import { logger } from './utils/logger';
 import { AppState } from './types';
 
@@ -13,6 +14,7 @@ async function processAudio(
   formatter: FormatterService,
   inserter: TextInserter,
   config: ReturnType<typeof loadConfig>,
+  appName: string | null,
   onDone: () => void
 ) {
   const startTime = Date.now();
@@ -44,7 +46,7 @@ async function processAudio(
   logger.startSpinner('Formatting...');
   let formatted: string;
   try {
-    formatted = await formatter.format(transcribed);
+    formatted = await formatter.format(transcribed, appName);
     logger.stopSpinner(true, `Formatted: "${formatted}"`);
   } catch {
     logger.stopSpinner(false, 'Formatter failed, using raw text');
@@ -71,6 +73,7 @@ async function main() {
   const inserter = new TextInserter();
 
   let state: AppState = 'idle';
+  let activeAppName: string | null = null;
 
   // macOS reports Right Option as 'RIGHT ALT' or 'RIGHT OPTION' depending on the library version
   const HOTKEY = process.platform === 'darwin' ? ['RIGHT ALT', 'RIGHT OPTION'] : ['RIGHT ALT'];
@@ -85,13 +88,18 @@ async function main() {
     if (e.state === 'DOWN' && isHotkeyKey(e.name) && state === 'idle') {
       state = 'recording';
       logger.recording(hotkeyLabel);
+      getActiveAppName().then(name => {
+        activeAppName = name;
+        logger.info(`Active app: ${name ?? 'unknown'}`);
+      }).catch(() => { activeAppName = null; });
       recorder.start(); // fire-and-forget
       return true;
     }
 
     if (e.state === 'UP' && isHotkeyKey(e.name) && state === 'recording') {
       state = 'processing';
-      processAudio(recorder, transcriber, formatter, inserter, config, () => {
+      const appName = activeAppName;
+      processAudio(recorder, transcriber, formatter, inserter, config, appName, () => {
         state = 'idle';
         logger.info(`Listening... (${hotkeyLabel} to record)`);
       }).catch(err => {
