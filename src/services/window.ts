@@ -1,10 +1,18 @@
 import { activeWindow } from 'get-windows';
 
-export async function getActiveAppName(): Promise<string | null> {
+export interface WindowInfo {
+  name: string | null;
+  processId: number | null;
+}
+
+export async function getActiveWindowInfo(): Promise<WindowInfo> {
   try {
     const win = await activeWindow();
-    return win?.owner?.name ?? null;
+    return {
+      name: win?.owner?.name ?? null,
+      processId: win?.owner?.processId ?? null,
+    };
   } catch {
-    return null;
+    return { name: null, processId: null };
   }
 }
