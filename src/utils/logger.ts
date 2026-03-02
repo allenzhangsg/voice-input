@@ -8,8 +8,9 @@ export const logger = {
   success: (msg: string) => console.log(chalk.green('  ✓ ' + msg)),
   error: (msg: string) => console.error(chalk.red('  ✗ ' + msg)),
 
-  recording: (hotkeyLabel = 'hotkey') => {
-    console.log(chalk.red.bold(`\n  🎙  Recording... (release ${hotkeyLabel} to stop)`));
+  recording: (hotkeyLabel = 'hotkey', translate = false, target = 'English') => {
+    const tag = translate ? chalk.yellow(' [TRANSLATE → ' + target + ']') : '';
+    console.log(chalk.red.bold(`\n  🎙  Recording...${tag} (release ${hotkeyLabel} to stop)`));
   },
 
   startSpinner: (text: string): Ora => {

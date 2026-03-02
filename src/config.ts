@@ -17,5 +17,7 @@ export function loadConfig(): Config {
     minRecordingSeconds: parseFloat(process.env.MIN_RECORDING_SECONDS || '0.5'),
     language: process.env.LANGUAGE || 'en',
     model: process.env.MODEL || 'gpt-4o-mini',
+    translateMode: process.env.TRANSLATE === 'true',
+    translateTarget: process.env.TRANSLATE_TARGET || 'English',
   };
 }
