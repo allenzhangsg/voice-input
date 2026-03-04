@@ -11,7 +11,7 @@ const CODE_APPS = ['code', 'cursor', 'terminal', 'iterm2', 'warp', 'zed', 'xcode
 function getContextHint(appName: string | null | undefined): string {
   if (!appName) return 'If casual/short → chat style. If formal/complete sentences → email style.';
   const lower = appName.toLowerCase();
-  if (CHAT_APPS.some(a => lower.includes(a))) return `Target app: ${appName}. Use casual chat style — no trailing punctuation, natural and conversational.`;
+  if (CHAT_APPS.some(a => lower.includes(a))) return `Target app: ${appName}. Use casual chat style — sound like a native speaker: natural rhythm, colloquial phrasing, contractions where appropriate. No trailing punctuation. Avoid stiff or overly formal wording. Show ease and fluency.`;
   if (EMAIL_APPS.some(a => lower.includes(a))) return `Target app: ${appName}. Use formal email style. If the text contains a greeting (e.g. "Hi X", "Hello X", "Dear X"), place it on its own line followed by a blank line, then the body text on separate lines. Proper punctuation and complete sentences throughout.`;
   if (CODE_APPS.some(a => lower.includes(a))) return `Target app: ${appName}. Preserve the text as-is with minimal changes — only fix obvious transcription errors.`;
   return `Target app: ${appName}. Match the appropriate tone for this application.`;
