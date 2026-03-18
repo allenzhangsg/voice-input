@@ -13,6 +13,7 @@ const HALLUCINATIONS = new Set([
   'please subscribe.',
   'like and subscribe.',
   'subscribe!',
+  "you"
 ]);
 
 export class TranscriptionService {
