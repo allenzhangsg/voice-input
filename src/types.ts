@@ -6,6 +6,7 @@ export interface Config {
   model: string;
   translateMode: boolean;
   translateTarget: string;
+  hotkey?: string;
 }
 
 export type AppState = 'idle' | 'recording' | 'processing';

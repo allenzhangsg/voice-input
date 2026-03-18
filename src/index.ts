@@ -80,27 +80,39 @@ async function main() {
   let state: AppState = 'idle';
   let activeAppName: string | null = null;
   let translateMode = config.translateMode;
-  let keyDownTime = 0;
   let recordingLogTimer: ReturnType<typeof setTimeout> | null = null;
   const TOGGLE_TAP_MS = 300;
 
   // macOS reports Right Option as 'RIGHT ALT' or 'RIGHT OPTION' depending on the library version
-  const HOTKEY = process.platform === 'darwin' ? ['RIGHT ALT', 'RIGHT OPTION'] : ['RIGHT ALT'];
-  const hotkeyLabel = process.platform === 'darwin' ? 'Right Option' : 'Right Alt';
+  const HOTKEY = config.hotkey
+    ? [config.hotkey]
+    : process.platform === 'darwin'
+      ? ['RIGHT ALT', 'RIGHT OPTION']
+      : ['RIGHT CTRL'];
+  const hotkeyLabel = config.hotkey
+    ?? (process.platform === 'darwin' ? 'Right Option' : 'Right Ctrl');
 
   const isHotkeyKey = (name: string | undefined): boolean =>
     name !== undefined && HOTKEY.includes(name);
 
   const keyListener = new GlobalKeyboardListener();
 
+  const isWindows = process.platform === 'win32';
+
   keyListener.addListener((e: IGlobalKeyEvent, _down: IGlobalKeyDownMap) => {
     if (e.state === 'DOWN' && isHotkeyKey(e.name) && state === 'idle') {
-      keyDownTime = Date.now();
       state = 'recording';
-      recorder.start(); // fire-and-forget
-      // Delay UI feedback — if key is released within TOGGLE_TAP_MS it's a toggle, not a recording
+      // On Windows, PvRecorder init blocks the event loop (~300ms), which prevents
+      // quick-tap detection. Defer recorder.start() until after the toggle window.
+      // On macOS, start immediately so no audio is lost.
+      if (!isWindows) {
+        recorder.start();
+      }
       recordingLogTimer = setTimeout(() => {
         recordingLogTimer = null;
+        if (isWindows) {
+          recorder.start();
+        }
         logger.recording(hotkeyLabel, translateMode, config.translateTarget);
         getActiveAppName().then(name => { activeAppName = name; }).catch(() => { activeAppName = null; });
       }, TOGGLE_TAP_MS);
@@ -108,10 +120,13 @@ async function main() {
     }
 
     if (e.state === 'UP' && isHotkeyKey(e.name) && state === 'recording') {
-      if (Date.now() - keyDownTime < TOGGLE_TAP_MS) {
-        // Short tap: cancel UI, discard recording, toggle translation mode
-        if (recordingLogTimer) { clearTimeout(recordingLogTimer); recordingLogTimer = null; }
-        recorder.stop(config.minRecordingSeconds, config.maxRecordingSeconds);
+      if (recordingLogTimer) {
+        // Released before TOGGLE_TAP_MS — quick tap to toggle translation
+        clearTimeout(recordingLogTimer);
+        recordingLogTimer = null;
+        if (!isWindows) {
+          recorder.stop(config.minRecordingSeconds, config.maxRecordingSeconds); // discard
+        }
         state = 'idle';
         translateMode = !translateMode;
         const readyLabel = translateMode ? `Ready [TRANSLATE → ${config.translateTarget}]` : 'Ready';

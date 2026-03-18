@@ -19,5 +19,6 @@ export function loadConfig(): Config {
     model: process.env.MODEL || 'gpt-4.1-mini',
     translateMode: process.env.TRANSLATE === 'true',
     translateTarget: process.env.TRANSLATE_TARGET || 'English',
+    hotkey: process.env.HOTKEY || undefined,
   };
 }
