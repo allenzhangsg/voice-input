@@ -7,6 +7,7 @@ import { TextInserter } from './services/inserter';
 import { getActiveAppName } from './services/window';
 import { logger } from './utils/logger';
 import { AppState } from './types';
+import chalk from 'chalk';
 
 interface ProcessAudioOptions {
   config: ReturnType<typeof loadConfig>;
@@ -129,7 +130,7 @@ async function main() {
         }
         state = 'idle';
         translateMode = !translateMode;
-        const readyLabel = translateMode ? `Ready [TRANSLATE → ${config.translateTarget}]` : 'Ready';
+        const readyLabel = translateMode ? `Ready [TRANSLATE → ${config.translateTarget}]` : 'Ready [TRANSCRIBE]';
         logger.info(readyLabel);
         return true;
       }
@@ -143,7 +144,8 @@ async function main() {
         translateMode: currentTranslateMode,
         onDone: () => {
           state = 'idle';
-          logger.info('Ready');
+          const readyLabel = translateMode ? `Ready [TRANSLATE → ${config.translateTarget}]` : 'Ready [TRANSCRIBE]';
+          logger.info(readyLabel);
         },
       }).catch(err => {
         logger.error(`Unexpected error: ${err.message}`);
@@ -153,9 +155,10 @@ async function main() {
     }
   });
 
-  const modeLabel = translateMode ? ` [TRANSLATE → ${config.translateTarget}]` : '';
-  console.log(`\n  Voice Input — Ready${modeLabel}`);
-  logger.info(`Press and hold ${hotkeyLabel} to record | Quick tap to toggle translate\n`);
+  console.log(`\n  Voice Input`);
+  logger.info(`Press and hold ${chalk.bold(hotkeyLabel)} to record | Quick tap to toggle translate`);
+  const startupModeLabel = translateMode ? `Ready [TRANSLATE → ${config.translateTarget}]` : 'Ready [TRANSCRIBE]';
+  logger.info(startupModeLabel);
 
   process.on('SIGINT', () => {
     keyListener.kill();
