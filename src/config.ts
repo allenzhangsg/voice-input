@@ -15,7 +15,7 @@ export function loadConfig(): Config {
     openaiApiKey: apiKey,
     maxRecordingSeconds: Number.parseInt(process.env.MAX_RECORDING_SECONDS || '60', 10),
     minRecordingSeconds: Number.parseFloat(process.env.MIN_RECORDING_SECONDS || '0.5'),
-    language: process.env.LANGUAGE || 'en',
+    language: process.env.LANGUAGE || 'auto',
     model: process.env.MODEL || 'gpt-4.1-mini',
     translateMode: process.env.TRANSLATE === 'true',
     translateTarget: process.env.TRANSLATE_TARGET || 'English',
