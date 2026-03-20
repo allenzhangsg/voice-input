@@ -4,73 +4,127 @@ import fs from 'fs';
 import os from 'os';
 import { AppState } from '../types';
 
-const SWIFT_SOURCE = path.join(__dirname, '..', 'native', 'StatusWindow.swift');
 const CACHE_DIR = path.join(os.homedir(), '.cache', 'voice-input');
-const BINARY_PATH = path.join(CACHE_DIR, 'StatusWindow');
 
-function needsCompile(): boolean {
-  try {
-    // When running via tsx, __dirname points to src/services; when compiled, dist/services.
-    // Resolve source relative to this file's location, but also try the src/ path.
-    const srcPath = getSwiftSourcePath();
-    if (!srcPath) return false; // no source found
+// ── Source path helpers ─────────────────────────────────────────────
 
-    if (!fs.existsSync(BINARY_PATH)) return true;
-    const srcMtime = fs.statSync(srcPath).mtimeMs;
-    const binMtime = fs.statSync(BINARY_PATH).mtimeMs;
-    return srcMtime > binMtime;
-  } catch {
-    return true;
-  }
-}
-
-function getSwiftSourcePath(): string | null {
-  // Try the path relative to this file first
-  if (fs.existsSync(SWIFT_SOURCE)) return SWIFT_SOURCE;
-  // Try from project root (handles both tsx and compiled scenarios)
-  const altPath = path.resolve(__dirname, '..', '..', 'src', 'native', 'StatusWindow.swift');
-  if (fs.existsSync(altPath)) return altPath;
+function findNativeSource(filename: string): string | null {
+  // Try relative to this file (works for both src/services and dist/services)
+  const nearby = path.join(__dirname, '..', 'native', filename);
+  if (fs.existsSync(nearby)) return nearby;
+  // Try from project root (handles tsx vs compiled)
+  const alt = path.resolve(__dirname, '..', '..', 'src', 'native', filename);
+  if (fs.existsSync(alt)) return alt;
   return null;
 }
 
-function compile(): boolean {
-  const srcPath = getSwiftSourcePath();
-  if (!srcPath) return false;
+// ── macOS helpers ───────────────────────────────────────────────────
 
+const SWIFT_BINARY = path.join(CACHE_DIR, 'StatusWindow');
+
+function needsCompileMac(): boolean {
+  try {
+    const src = findNativeSource('StatusWindow.swift');
+    if (!src) return false;
+    if (!fs.existsSync(SWIFT_BINARY)) return true;
+    return fs.statSync(src).mtimeMs > fs.statSync(SWIFT_BINARY).mtimeMs;
+  } catch { return true; }
+}
+
+function compileMac(): boolean {
+  const src = findNativeSource('StatusWindow.swift');
+  if (!src) return false;
   try {
     fs.mkdirSync(CACHE_DIR, { recursive: true });
-    execSync(`swiftc -O -o "${BINARY_PATH}" "${srcPath}"`, {
-      timeout: 30000,
-      stdio: 'pipe',
-    });
+    execSync(`swiftc -O -o "${SWIFT_BINARY}" "${src}"`, { timeout: 30000, stdio: 'pipe' });
     return true;
-  } catch {
-    return false;
-  }
+  } catch { return false; }
 }
+
+// ── Windows helpers ─────────────────────────────────────────────────
+
+const WIN_BINARY = path.join(CACHE_DIR, 'StatusWindow.exe');
+
+function findCsc(): string | null {
+  // .NET Framework csc.exe ships with Windows
+  const frameworkDir = path.join(
+    process.env.WINDIR || 'C:\\Windows',
+    'Microsoft.NET', 'Framework64', 'v4.0.30319'
+  );
+  const csc = path.join(frameworkDir, 'csc.exe');
+  if (fs.existsSync(csc)) return csc;
+  // Try 32-bit fallback
+  const fw32 = path.join(
+    process.env.WINDIR || 'C:\\Windows',
+    'Microsoft.NET', 'Framework', 'v4.0.30319'
+  );
+  const csc32 = path.join(fw32, 'csc.exe');
+  if (fs.existsSync(csc32)) return csc32;
+  return null;
+}
+
+function needsCompileWin(): boolean {
+  try {
+    const src = findNativeSource('StatusWindow.cs');
+    if (!src) return false;
+    if (!fs.existsSync(WIN_BINARY)) return true;
+    return fs.statSync(src).mtimeMs > fs.statSync(WIN_BINARY).mtimeMs;
+  } catch { return true; }
+}
+
+function compileWin(): boolean {
+  const src = findNativeSource('StatusWindow.cs');
+  const csc = findCsc();
+  if (!src || !csc) return false;
+  try {
+    fs.mkdirSync(CACHE_DIR, { recursive: true });
+    execSync(
+      `"${csc}" /nologo /optimize /target:winexe /out:"${WIN_BINARY}" /r:System.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Management.dll "${src}"`,
+      { timeout: 30000, stdio: 'pipe' }
+    );
+    return true;
+  } catch { return false; }
+}
+
+// ── FloatingWindow class ────────────────────────────────────────────
 
 export class FloatingWindow {
   private proc: ChildProcess | null = null;
   private enabled = false;
 
   async start(): Promise<void> {
-    if (process.platform !== 'darwin') return;
-
-    if (needsCompile()) {
-      if (!compile()) return;
+    if (process.platform === 'darwin') {
+      await this.startMacOS();
+    } else if (process.platform === 'win32') {
+      await this.startWindows();
     }
+  }
 
-    if (!fs.existsSync(BINARY_PATH)) return;
+  private async startMacOS(): Promise<void> {
+    if (needsCompileMac()) {
+      if (!compileMac()) return;
+    }
+    if (!fs.existsSync(SWIFT_BINARY)) return;
 
-    this.proc = spawn(BINARY_PATH, [], {
+    this.proc = spawn(SWIFT_BINARY, [], {
       stdio: ['pipe', 'ignore', 'ignore'],
     });
     this.enabled = true;
+    this.proc.on('exit', () => { this.proc = null; this.enabled = false; });
+  }
 
-    this.proc.on('exit', () => {
-      this.proc = null;
-      this.enabled = false;
+  private async startWindows(): Promise<void> {
+    if (needsCompileWin()) {
+      if (!compileWin()) return;
+    }
+    if (!fs.existsSync(WIN_BINARY)) return;
+
+    this.proc = spawn(WIN_BINARY, [], {
+      stdio: ['pipe', 'ignore', 'ignore'],
+      windowsHide: true,
     });
+    this.enabled = true;
+    this.proc.on('exit', () => { this.proc = null; this.enabled = false; });
   }
 
   private send(msg: string): void {
