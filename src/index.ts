@@ -6,6 +6,7 @@ import { FormatterService } from './services/formatter';
 import { TextInserter } from './services/inserter';
 import { getActiveAppName } from './services/window';
 import { logger } from './utils/logger';
+import { FloatingWindow } from './services/floatingWindow';
 import { AppState } from './types';
 import chalk from 'chalk';
 
@@ -13,6 +14,7 @@ interface ProcessAudioOptions {
   config: ReturnType<typeof loadConfig>;
   appName: string | null;
   translateMode: boolean;
+  floatingWindow: FloatingWindow;
   onDone: () => void;
 }
 
@@ -21,7 +23,7 @@ async function processAudio(
   transcriber: TranscriptionService,
   formatter: FormatterService,
   inserter: TextInserter,
-  { config, appName, translateMode, onDone }: ProcessAudioOptions
+  { config, appName, translateMode, floatingWindow, onDone }: ProcessAudioOptions
 ) {
   const startTime = Date.now();
 
@@ -32,6 +34,7 @@ async function processAudio(
     return;
   }
 
+  floatingWindow.updateText('Transcribing...');
   logger.startSpinner('Transcribing...');
   let transcribed: string;
   try {
@@ -49,6 +52,7 @@ async function processAudio(
     return;
   }
 
+  floatingWindow.updateText(translateMode ? 'Translating...' : 'Formatting...');
   logger.startSpinner(translateMode ? 'Translating & formatting...' : 'Formatting...');
   let formatted: string;
   try {
@@ -59,6 +63,7 @@ async function processAudio(
     formatted = transcribed;
   }
 
+  floatingWindow.updateText('Inserting...');
   logger.startSpinner('Inserting...');
   try {
     await inserter.insert(formatted);
@@ -78,9 +83,13 @@ async function main() {
   const formatter = new FormatterService(config.openaiApiKey, config.model);
   const inserter = new TextInserter();
 
+  const floatingWindow = new FloatingWindow();
+  await floatingWindow.start();
+
   let state: AppState = 'idle';
   let activeAppName: string | null = null;
   let translateMode = config.translateMode;
+  floatingWindow.updateMode(translateMode, config.translateTarget);
   let recordingLogTimer: ReturnType<typeof setTimeout> | null = null;
   const TOGGLE_TAP_MS = 300;
 
@@ -98,22 +107,15 @@ async function main() {
 
   const keyListener = new GlobalKeyboardListener();
 
-  const isWindows = process.platform === 'win32';
-
   keyListener.addListener((e: IGlobalKeyEvent, _down: IGlobalKeyDownMap) => {
     if (e.state === 'DOWN' && isHotkeyKey(e.name) && state === 'idle') {
       state = 'recording';
-      // On Windows, PvRecorder init blocks the event loop (~300ms), which prevents
-      // quick-tap detection. Defer recorder.start() until after the toggle window.
-      // On macOS, start immediately so no audio is lost.
-      if (!isWindows) {
-        recorder.start();
-      }
+      // Defer recorder.start() until after the toggle window so quick-tap
+      // doesn't activate the microphone.
       recordingLogTimer = setTimeout(() => {
         recordingLogTimer = null;
-        if (isWindows) {
-          recorder.start();
-        }
+        recorder.start();
+        floatingWindow.updateState('recording');
         logger.recording(hotkeyLabel, translateMode, config.translateTarget);
         getActiveAppName().then(name => { activeAppName = name; }).catch(() => { activeAppName = null; });
       }, TOGGLE_TAP_MS);
@@ -125,25 +127,27 @@ async function main() {
         // Released before TOGGLE_TAP_MS — quick tap to toggle translation
         clearTimeout(recordingLogTimer);
         recordingLogTimer = null;
-        if (!isWindows) {
-          recorder.stop(config.minRecordingSeconds, config.maxRecordingSeconds); // discard
-        }
         state = 'idle';
         translateMode = !translateMode;
+        floatingWindow.updateMode(translateMode, config.translateTarget);
+        floatingWindow.flash(translateMode ? 'Translate' : 'Transcribe');
         const readyLabel = translateMode ? `Ready [TRANSLATE → ${config.translateTarget}]` : 'Ready [TRANSCRIBE]';
         logger.info(readyLabel);
         return true;
       }
 
       state = 'processing';
+      floatingWindow.updateState('processing');
       const appName = activeAppName;
       const currentTranslateMode = translateMode;
       processAudio(recorder, transcriber, formatter, inserter, {
         config,
         appName,
         translateMode: currentTranslateMode,
+        floatingWindow,
         onDone: () => {
           state = 'idle';
+          floatingWindow.updateState('idle');
           const readyLabel = translateMode ? `Ready [TRANSLATE → ${config.translateTarget}]` : 'Ready [TRANSCRIBE]';
           logger.info(readyLabel);
         },
@@ -161,6 +165,7 @@ async function main() {
   logger.info(startupModeLabel);
 
   process.on('SIGINT', () => {
+    floatingWindow.close();
     keyListener.kill();
     console.log('\n  Bye!');
     process.exit(0);
