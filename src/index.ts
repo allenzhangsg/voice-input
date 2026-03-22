@@ -119,7 +119,6 @@ async function main() {
         logger.recording(hotkeyLabel, translateMode, config.translateTarget);
         getActiveAppName().then(name => { activeAppName = name; }).catch(() => { activeAppName = null; });
       }, TOGGLE_TAP_MS);
-      return true;
     }
 
     if (e.state === 'UP' && isHotkeyKey(e.name) && state === 'recording') {
@@ -133,7 +132,7 @@ async function main() {
         floatingWindow.flash(translateMode ? 'Translate' : 'Transcribe');
         const readyLabel = translateMode ? `Ready [TRANSLATE → ${config.translateTarget}]` : 'Ready [TRANSCRIBE]';
         logger.info(readyLabel);
-        return true;
+        return;
       }
 
       state = 'processing';
@@ -155,7 +154,6 @@ async function main() {
         logger.error(`Unexpected error: ${err.message}`);
         state = 'idle';
       });
-      return true;
     }
   });
 
