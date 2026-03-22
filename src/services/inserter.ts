@@ -13,7 +13,7 @@ function simulatePaste(): void {
   } else {
     // Windows: Ctrl+V via PowerShell SendKeys
     execSync(
-      `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('^v')"`,
+      `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('+{INSERT}')"`,
       { windowsHide: true, timeout: 3000 }
     );
   }

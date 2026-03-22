@@ -98,9 +98,9 @@ async function main() {
     ? [config.hotkey]
     : process.platform === 'darwin'
       ? ['RIGHT ALT', 'RIGHT OPTION']
-      : ['RIGHT CTRL'];
+      : ['RIGHT SHIFT'];
   const hotkeyLabel = config.hotkey
-    ?? (process.platform === 'darwin' ? 'Right Option' : 'Right Ctrl');
+    ?? (process.platform === 'darwin' ? 'Right Option' : 'Right Shift');
 
   const isHotkeyKey = (name: string | undefined): boolean =>
     name !== undefined && HOTKEY.includes(name);
