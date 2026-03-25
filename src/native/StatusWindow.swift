@@ -23,7 +23,7 @@ class StatusWindow: NSObject, NSApplicationDelegate {
 
         let initialWidth: CGFloat = 120
 
-        guard let screen = NSScreen.main else { return }
+        let screen = activeScreen()
         let screenFrame = screen.visibleFrame
         let x = screenFrame.midX - initialWidth / 2
         let y = screenFrame.minY + 24
@@ -143,13 +143,14 @@ class StatusWindow: NSObject, NSApplicationDelegate {
 
         let totalWidth = statusX + statusW + padding
 
-        // Re-center on screen
-        guard let screen = NSScreen.main else { return }
+        // Re-center on active screen
+        let screen = activeScreen()
         let screenFrame = screen.visibleFrame
         let newX = screenFrame.midX - totalWidth / 2
 
         var frame = window.frame
         frame.origin.x = newX
+        frame.origin.y = screenFrame.minY + 24
         frame.size.width = totalWidth
         window.setFrame(frame, display: false)
 
@@ -270,6 +271,16 @@ class StatusWindow: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - Helpers
+
+    func activeScreen() -> NSScreen {
+        let mouseLocation = NSEvent.mouseLocation
+        for screen in NSScreen.screens {
+            if screen.frame.contains(mouseLocation) {
+                return screen
+            }
+        }
+        return NSScreen.main ?? NSScreen.screens[0]
+    }
 
     func makeLabel(size: CGFloat, weight: NSFont.Weight) -> NSTextField {
         let label = NSTextField(frame: .zero)

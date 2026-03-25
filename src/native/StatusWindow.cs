@@ -33,6 +33,8 @@ class StatusWindow : Form
     static extern int ReleaseDC(IntPtr hWnd, IntPtr hdc);
     [DllImport("user32.dll")]
     static extern bool SetProcessDPIAware();
+    [DllImport("user32.dll")]
+    static extern bool GetCursorPos(out POINT lpPoint);
     [DllImport("gdi32.dll")]
     static extern int GetDeviceCaps(IntPtr hdc, int nIndex);
 
@@ -177,8 +179,11 @@ class StatusWindow : Form
         float labelX = PadH + DotSize + Gap;
         float totalWidth = labelX + modeSz.Width + sepGap + statusSz.Width + PadH;
 
-        // Reposition window
-        var screen = Screen.PrimaryScreen.WorkingArea;
+        // Reposition window on screen containing the cursor
+        POINT cursorPos;
+        GetCursorPos(out cursorPos);
+        var cursorScreen = Screen.FromPoint(new Point(cursorPos.X, cursorPos.Y));
+        var screen = cursorScreen.WorkingArea;
         int winWidth = (int)Math.Ceiling(totalWidth) + ExtraPad;
         int newLeft = screen.Left + (screen.Width - winWidth) / 2;
         int newTop = screen.Bottom - PillHeight - BottomMargin;
