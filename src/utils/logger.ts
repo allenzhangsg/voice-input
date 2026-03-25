@@ -10,7 +10,7 @@ export const logger = {
 
   recording: (hotkeyLabel = 'hotkey', translate = false, target = 'English') => {
     const tag = translate ? chalk.yellow(' [TRANSLATE → ' + target + ']') : '';
-    console.log(chalk.red.bold(`\n  🎙  Recording...${tag} (release ${hotkeyLabel} to stop)`));
+    console.log(chalk.red.bold(`\n  🎙  Recording...${tag} (press ${hotkeyLabel} again to stop)`));
   },
 
   startSpinner: (text: string): Ora => {
