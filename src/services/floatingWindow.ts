@@ -91,6 +91,11 @@ function compileWin(): boolean {
 export class FloatingWindow {
   private proc: ChildProcess | null = null;
   private enabled = false;
+  private cancelCallback: (() => void) | null = null;
+
+  onCancel(callback: () => void): void {
+    this.cancelCallback = callback;
+  }
 
   async start(): Promise<void> {
     if (process.platform === 'darwin') {
@@ -107,9 +112,10 @@ export class FloatingWindow {
     if (!fs.existsSync(SWIFT_BINARY)) return;
 
     this.proc = spawn(SWIFT_BINARY, [], {
-      stdio: ['pipe', 'ignore', 'ignore'],
+      stdio: ['pipe', 'pipe', 'ignore'],
     });
     this.enabled = true;
+    this.listenStdout();
     this.proc.on('exit', () => { this.proc = null; this.enabled = false; });
   }
 
@@ -120,11 +126,27 @@ export class FloatingWindow {
     if (!fs.existsSync(WIN_BINARY)) return;
 
     this.proc = spawn(WIN_BINARY, [], {
-      stdio: ['pipe', 'ignore', 'ignore'],
+      stdio: ['pipe', 'pipe', 'ignore'],
       windowsHide: true,
     });
     this.enabled = true;
+    this.listenStdout();
     this.proc.on('exit', () => { this.proc = null; this.enabled = false; });
+  }
+
+  private listenStdout(): void {
+    if (!this.proc?.stdout) return;
+    let buffer = '';
+    this.proc.stdout.on('data', (chunk: Buffer) => {
+      buffer += chunk.toString();
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (line.trim() === 'CANCEL' && this.cancelCallback) {
+          this.cancelCallback();
+        }
+      }
+    });
   }
 
   private send(msg: string): void {

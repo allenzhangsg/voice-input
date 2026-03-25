@@ -1,14 +1,29 @@
 import AppKit
 import Foundation
 
+// Custom view that only accepts clicks in the close-button region
+class HitTestView: NSView {
+    var closeButtonFrame: NSRect = .zero
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        if closeButtonFrame.isEmpty { return nil }
+        let local = convert(point, from: superview)
+        if closeButtonFrame.insetBy(dx: -4, dy: -4).contains(local) {
+            return super.hitTest(point)
+        }
+        return nil
+    }
+}
+
 class StatusWindow: NSObject, NSApplicationDelegate {
     var window: NSWindow!
-    var contentViewWrapper: NSView!
+    var contentViewWrapper: HitTestView!
     var containerView: NSVisualEffectView!
     var dotView: NSView!
     var pulseLayer: CALayer!
     var modeLabel: NSTextField!
     var label: NSTextField!
+    var closeButton: NSButton!
     var currentState = "idle"
     var pulseTimer: Timer?
     var flashTimer: Timer?
@@ -17,6 +32,7 @@ class StatusWindow: NSObject, NSApplicationDelegate {
     let padding: CGFloat = 14
     let dotSize: CGFloat = 10
     let gap: CGFloat = 6
+    let closeBtnSize: CGFloat = 16
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -40,11 +56,11 @@ class StatusWindow: NSObject, NSApplicationDelegate {
         window.hasShadow = true
         window.collectionBehavior = [.canJoinAllSpaces, .stationary]
         window.isReleasedWhenClosed = false
-        window.ignoresMouseEvents = true
+        window.ignoresMouseEvents = false
         window.alphaValue = 0
 
-        // Wrapper to mask corners
-        contentViewWrapper = NSView(frame: NSRect(x: 0, y: 0, width: initialWidth, height: pillHeight))
+        // Wrapper to mask corners (custom hit-test view)
+        contentViewWrapper = HitTestView(frame: NSRect(x: 0, y: 0, width: initialWidth, height: pillHeight))
         contentViewWrapper.wantsLayer = true
         contentViewWrapper.layer?.cornerRadius = pillHeight / 2
         contentViewWrapper.layer?.masksToBounds = true
@@ -91,6 +107,18 @@ class StatusWindow: NSObject, NSApplicationDelegate {
         label = makeLabel(size: fontSize, weight: .medium)
         label.frame = NSRect(x: labelX, y: labelY, width: 0, height: labelHeight)
         containerView.addSubview(label)
+
+        // Close button (X) — hidden by default, shown during recording/processing
+        closeButton = NSButton(frame: NSRect(x: 0, y: (pillHeight - closeBtnSize) / 2, width: closeBtnSize, height: closeBtnSize))
+        closeButton.bezelStyle = .inline
+        closeButton.isBordered = false
+        closeButton.title = ""
+        closeButton.image = makeCloseImage()
+        closeButton.imagePosition = .imageOnly
+        closeButton.target = self
+        closeButton.action = #selector(closeButtonClicked)
+        closeButton.isHidden = true
+        containerView.addSubview(closeButton)
 
         // Start hidden
         window.orderOut(nil)
@@ -141,7 +169,20 @@ class StatusWindow: NSObject, NSApplicationDelegate {
         let statusW = intrinsicWidth(label)
         label.frame = NSRect(x: statusX, y: labelY, width: statusW, height: labelHeight)
 
-        let totalWidth = statusX + statusW + padding
+        // Close button after status text
+        let closeGap: CGFloat = closeButton.isHidden ? 0 : gap
+        let closeW: CGFloat = closeButton.isHidden ? 0 : closeBtnSize
+        let closeX = statusX + statusW + closeGap
+        closeButton.frame = NSRect(x: closeX, y: (pillHeight - closeBtnSize) / 2, width: closeBtnSize, height: closeBtnSize)
+
+        let totalWidth = closeX + closeW + padding
+
+        // Update hit-test region for close button
+        if !closeButton.isHidden {
+            contentViewWrapper.closeButtonFrame = NSRect(x: closeX, y: (pillHeight - closeBtnSize) / 2, width: closeBtnSize, height: closeBtnSize)
+        } else {
+            contentViewWrapper.closeButtonFrame = .zero
+        }
 
         // Re-center on active screen
         let screen = activeScreen()
@@ -166,15 +207,17 @@ class StatusWindow: NSObject, NSApplicationDelegate {
             currentState = state
             switch state {
             case "idle":
+                closeButton.isHidden = true
                 stopPulse()
                 fadeOut()
             case "recording":
+                closeButton.isHidden = false
                 setDotColor(NSColor.systemRed)
                 startPulse()
                 setStatusText("Recording…")
                 fadeIn()
             case "processing":
-                stopPulse()
+                closeButton.isHidden = false
                 setDotColor(NSColor.systemOrange)
                 setStatusText("Processing…")
                 fadeIn()
@@ -280,6 +323,39 @@ class StatusWindow: NSObject, NSApplicationDelegate {
             }
         }
         return NSScreen.main ?? NSScreen.screens[0]
+    }
+
+    @objc func closeButtonClicked() {
+        // Send CANCEL to stdout so the Node process can handle it
+        print("CANCEL")
+        fflush(stdout)
+    }
+
+    func makeCloseImage() -> NSImage {
+        let size = NSSize(width: closeBtnSize, height: closeBtnSize)
+        let image = NSImage(size: size, flipped: false) { rect in
+            // Circle
+            let circleInset: CGFloat = 0.5
+            let circleRect = rect.insetBy(dx: circleInset, dy: circleInset)
+            let circle = NSBezierPath(ovalIn: circleRect)
+            circle.lineWidth = 1.0
+            NSColor.secondaryLabelColor.withAlphaComponent(0.3).setFill()
+            circle.fill()
+            NSColor.secondaryLabelColor.setStroke()
+            circle.stroke()
+            // Cross
+            let inset: CGFloat = 4.5
+            let cross = NSBezierPath()
+            cross.lineWidth = 1.5
+            cross.lineCapStyle = .round
+            cross.move(to: NSPoint(x: inset, y: inset))
+            cross.line(to: NSPoint(x: rect.width - inset, y: rect.height - inset))
+            cross.move(to: NSPoint(x: rect.width - inset, y: inset))
+            cross.line(to: NSPoint(x: inset, y: rect.height - inset))
+            cross.stroke()
+            return true
+        }
+        return image
     }
 
     func makeLabel(size: CGFloat, weight: NSFont.Weight) -> NSTextField {

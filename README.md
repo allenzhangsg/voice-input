@@ -1,6 +1,6 @@
 # voice-input
 
-A CLI tool that turns voice into polished text. Press a hotkey to record, release to transcribe (via Whisper), format (via GPT), and paste into the active app. Supports translation mode and context-aware formatting based on the target application.
+A CLI tool that turns voice into polished text. Press a hotkey to start recording, press again to stop, then it transcribes (via Whisper), formats (via GPT), and pastes into the active app. Supports translation mode and context-aware formatting based on the target application.
 
 ## Requirements
 
@@ -65,8 +65,11 @@ npm start
 
 | Action | macOS | Windows |
 |---|---|---|
-| **Record** (hold) | Right Option | Right Ctrl |
-| **Toggle translate mode** (quick tap) | Right Option | Right Ctrl |
+| **Start/stop recording** (single tap) | Right Option | Right Ctrl |
+| **Toggle translate mode** (double-tap) | Right Option | Right Ctrl |
+| **Cancel recording** | ESC or click X button | ESC or click X button |
+
+Recording auto-stops when the maximum duration is reached. A floating status pill appears during recording and processing, with a close button (X) to cancel.
 
 The hotkey can be overridden with the `HOTKEY` env var (uses `node-global-key-listener` key names, e.g. `RIGHT ALT`, `RIGHT CTRL`).
 
@@ -82,7 +85,7 @@ The formatter adapts its style based on the active application:
 
 ### Translation mode
 
-Quick-tap the hotkey to toggle translation mode. When active, spoken text is transcribed and then translated into the configured target language (`TRANSLATE_TARGET`, default: English).
+Double-tap the hotkey to toggle translation mode. When active, spoken text is transcribed and then translated into the configured target language (`TRANSLATE_TARGET`, default: English).
 
 ## Platform notes
 

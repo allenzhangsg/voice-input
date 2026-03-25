@@ -90,6 +90,22 @@ async function main() {
   let activeAppName: string | null = null;
   let translateMode = config.translateMode;
   floatingWindow.updateMode(translateMode, config.translateTarget);
+
+  function cancelRecording() {
+    if (state !== 'recording') return;
+    if (maxRecordingTimer) {
+      clearTimeout(maxRecordingTimer);
+      maxRecordingTimer = null;
+    }
+    recorder.stop(0, config.maxRecordingSeconds).catch(() => {});
+    state = 'idle';
+    floatingWindow.updateState('idle');
+    logger.info('Recording cancelled');
+    const readyLabel = translateMode ? `Ready [TRANSLATE → ${config.translateTarget}]` : 'Ready [TRANSCRIBE]';
+    logger.info(readyLabel);
+  }
+
+  floatingWindow.onCancel(cancelRecording);
   // macOS reports Right Option as 'RIGHT ALT' or 'RIGHT OPTION' depending on the library version
   const HOTKEY = config.hotkey
     ? [config.hotkey]
@@ -153,6 +169,12 @@ async function main() {
   const keyListener = new GlobalKeyboardListener();
 
   keyListener.addListener((e: IGlobalKeyEvent, _down: IGlobalKeyDownMap) => {
+    // ESC cancels recording (same as clicking the X button)
+    if (e.state === 'DOWN' && e.name === 'ESCAPE' && state === 'recording') {
+      cancelRecording();
+      return;
+    }
+
     if (e.state !== 'DOWN' || !isHotkeyKey(e.name)) return;
 
     // While recording: tap to stop & process (no ambiguity)

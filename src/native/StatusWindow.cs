@@ -56,6 +56,11 @@ class StatusWindow : Form
     const byte AC_SRC_OVER = 0;
     const byte AC_SRC_ALPHA = 1;
 
+    [DllImport("user32.dll")]
+    static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")]
+    static extern bool SetForegroundWindow(IntPtr hWnd);
+
     // ── Layout (scaled at runtime by DPI) ─────────────────────────
     float dpiScale = 1f;
     int PillHeight;
@@ -65,6 +70,7 @@ class StatusWindow : Form
     float FontSize;
     int BottomMargin;
     int ExtraPad;
+    int CloseBtnSize;
 
     // ── State ───────────────────────────────────────────────────────
     string currentState = "idle";
@@ -78,6 +84,9 @@ class StatusWindow : Form
     System.Windows.Forms.Timer flashTimer;
     System.Windows.Forms.Timer fadeTimer;
     System.Windows.Forms.Timer orphanTimer;
+    RectangleF closeBtnRect = RectangleF.Empty;
+    bool closeBtnVisible = false;
+    IntPtr prevForegroundWindow = IntPtr.Zero;
 
     double targetOpacity = 0;
     double currentOpacity = 0;
@@ -106,6 +115,7 @@ class StatusWindow : Form
         FontSize    = 12f * dpiScale;
         BottomMargin = (int)(24 * dpiScale);
         ExtraPad    = (int)(20 * dpiScale);
+        CloseBtnSize = (int)(16 * dpiScale);
 
         FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false;
@@ -150,6 +160,42 @@ class StatusWindow : Form
 
     protected override bool ShowWithoutActivation { get { return true; } }
 
+    const int WM_NCHITTEST = 0x0084;
+    const int WM_LBUTTONDOWN = 0x0201;
+    const int HTCLIENT = 1;
+    const int HTTRANSPARENT = -1;
+
+    protected override void WndProc(ref Message m)
+    {
+        if (m.Msg == WM_NCHITTEST && closeBtnVisible)
+        {
+            var pt = PointToClient(new Point(m.LParam.ToInt32() & 0xFFFF, m.LParam.ToInt32() >> 16));
+            if (closeBtnRect.Contains(pt.X, pt.Y))
+            {
+                m.Result = (IntPtr)HTCLIENT;
+                return;
+            }
+            m.Result = (IntPtr)HTTRANSPARENT;
+            return;
+        }
+        if (m.Msg == WM_LBUTTONDOWN && closeBtnVisible)
+        {
+            var pt = PointToClient(new Point(m.LParam.ToInt32() & 0xFFFF, m.LParam.ToInt32() >> 16));
+            var hitArea = RectangleF.Inflate(closeBtnRect, 4, 4);
+            if (hitArea.Contains(pt.X, pt.Y))
+            {
+                Console.WriteLine("CANCEL");
+                Console.Out.Flush();
+                // Restore focus to previous foreground window
+                if (prevForegroundWindow != IntPtr.Zero)
+                    SetForegroundWindow(prevForegroundWindow);
+                base.WndProc(ref m);
+                return;
+            }
+        }
+        base.WndProc(ref m);
+    }
+
     // ── Per-pixel alpha rendering via UpdateLayeredWindow ────────────
     void PaintLayered()
     {
@@ -177,7 +223,9 @@ class StatusWindow : Form
 
         float sepGap = (modeSz.Width > 0 && statusSz.Width > 0) ? Gap : 0;
         float labelX = PadH + DotSize + Gap;
-        float totalWidth = labelX + modeSz.Width + sepGap + statusSz.Width + PadH;
+        float closeGap = closeBtnVisible ? Gap : 0;
+        float closeW = closeBtnVisible ? CloseBtnSize : 0;
+        float totalWidth = labelX + modeSz.Width + sepGap + statusSz.Width + closeGap + closeW + PadH;
 
         // Reposition window on screen containing the cursor
         POINT cursorPos;
@@ -237,6 +285,37 @@ class StatusWindow : Form
         {
             using (var brush = new SolidBrush(TextColor))
                 g.DrawString(statusText, fontMedium, brush, curX, textY);
+            curX += statusSz.Width;
+        }
+
+        // Close button (X with circle)
+        if (closeBtnVisible)
+        {
+            float cbX = curX + closeGap;
+            float cbY = cy - CloseBtnSize / 2f;
+            float inset = 4.5f * dpiScale;
+            float penW = 1.5f * dpiScale;
+            // Store absolute position for hit testing (relative to form)
+            closeBtnRect = new RectangleF(cbX, cbY, CloseBtnSize, CloseBtnSize);
+            // Circle background
+            float circleInset = 0.5f * dpiScale;
+            var circleColor = Color.FromArgb(76, ModeColor.R, ModeColor.G, ModeColor.B);
+            using (var brush = new SolidBrush(circleColor))
+                g.FillEllipse(brush, cbX + circleInset, cbY + circleInset, CloseBtnSize - circleInset * 2, CloseBtnSize - circleInset * 2);
+            using (var pen = new Pen(ModeColor, 1f * dpiScale))
+                g.DrawEllipse(pen, cbX + circleInset, cbY + circleInset, CloseBtnSize - circleInset * 2, CloseBtnSize - circleInset * 2);
+            // Cross
+            using (var pen = new Pen(ModeColor, penW))
+            {
+                pen.StartCap = LineCap.Round;
+                pen.EndCap = LineCap.Round;
+                g.DrawLine(pen, cbX + inset, cbY + inset, cbX + CloseBtnSize - inset, cbY + CloseBtnSize - inset);
+                g.DrawLine(pen, cbX + CloseBtnSize - inset, cbY + inset, cbX + inset, cbY + CloseBtnSize - inset);
+            }
+        }
+        else
+        {
+            closeBtnRect = RectangleF.Empty;
         }
 
         font.Dispose();
@@ -324,10 +403,13 @@ class StatusWindow : Form
             switch (state)
             {
                 case "idle":
+                    closeBtnVisible = false;
                     StopPulse();
                     FadeOut();
                     break;
                 case "recording":
+                    closeBtnVisible = true;
+                    prevForegroundWindow = GetForegroundWindow();
                     dotColor = Color.FromArgb(255, 59, 48);
                     StartPulse();
                     statusText = "Recording\u2026";
@@ -335,7 +417,7 @@ class StatusWindow : Form
                     FadeIn();
                     break;
                 case "processing":
-                    StopPulse();
+                    closeBtnVisible = true;
                     dotColor = Color.FromArgb(255, 149, 0);
                     statusText = "Processing\u2026";
                     PaintLayered();
