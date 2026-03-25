@@ -153,7 +153,7 @@ class StatusWindow : Form
         get
         {
             var cp = base.CreateParams;
-            cp.ExStyle |= WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
+            cp.ExStyle |= WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
             return cp;
         }
     }
@@ -161,37 +161,49 @@ class StatusWindow : Form
     protected override bool ShowWithoutActivation { get { return true; } }
 
     const int WM_NCHITTEST = 0x0084;
+    const int WM_MOUSEACTIVATE = 0x0021;
     const int WM_LBUTTONDOWN = 0x0201;
     const int HTCLIENT = 1;
     const int HTTRANSPARENT = -1;
+    const int MA_NOACTIVATE = 3;
+
+    Point ScreenPointFromLParam(IntPtr lParam)
+    {
+        int v = lParam.ToInt32();
+        return new Point((short)(v & 0xFFFF), (short)(v >> 16));
+    }
 
     protected override void WndProc(ref Message m)
     {
-        if (m.Msg == WM_NCHITTEST && closeBtnVisible)
+        // Prevent the window from activating on click, but allow the click through
+        if (m.Msg == WM_MOUSEACTIVATE)
         {
-            var pt = PointToClient(new Point(m.LParam.ToInt32() & 0xFFFF, m.LParam.ToInt32() >> 16));
-            if (closeBtnRect.Contains(pt.X, pt.Y))
+            m.Result = (IntPtr)MA_NOACTIVATE;
+            return;
+        }
+        // Hit test: only the close button is clickable; everything else passes through
+        if (m.Msg == WM_NCHITTEST)
+        {
+            if (closeBtnVisible && !closeBtnRect.IsEmpty)
             {
-                m.Result = (IntPtr)HTCLIENT;
-                return;
+                var pt = PointToClient(ScreenPointFromLParam(m.LParam));
+                var hitArea = RectangleF.Inflate(closeBtnRect, 4 * dpiScale, 4 * dpiScale);
+                if (hitArea.Contains(pt.X, pt.Y))
+                {
+                    m.Result = (IntPtr)HTCLIENT;
+                    return;
+                }
             }
             m.Result = (IntPtr)HTTRANSPARENT;
             return;
         }
         if (m.Msg == WM_LBUTTONDOWN && closeBtnVisible)
         {
-            var pt = PointToClient(new Point(m.LParam.ToInt32() & 0xFFFF, m.LParam.ToInt32() >> 16));
-            var hitArea = RectangleF.Inflate(closeBtnRect, 4, 4);
-            if (hitArea.Contains(pt.X, pt.Y))
-            {
-                Console.WriteLine("CANCEL");
-                Console.Out.Flush();
-                // Restore focus to previous foreground window
-                if (prevForegroundWindow != IntPtr.Zero)
-                    SetForegroundWindow(prevForegroundWindow);
-                base.WndProc(ref m);
-                return;
-            }
+            Console.WriteLine("CANCEL");
+            Console.Out.Flush();
+            if (prevForegroundWindow != IntPtr.Zero)
+                SetForegroundWindow(prevForegroundWindow);
+            return;
         }
         base.WndProc(ref m);
     }
