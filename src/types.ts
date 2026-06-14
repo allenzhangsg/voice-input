@@ -8,7 +8,7 @@ export interface Config {
   translateTarget: string;
   hotkey?: string;
   realtime: boolean;
-  realtimeIntervalMs: number;
+  realtimeModel: string;
 }
 
 export type AppState = 'idle' | 'recording' | 'processing';

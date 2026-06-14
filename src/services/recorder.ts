@@ -41,7 +41,7 @@ export class AudioRecorder {
   private frames: Int16Array[] = [];
   private recording = false;
 
-  async start(): Promise<void> {
+  async start(onFrame?: (frame: Int16Array) => void): Promise<void> {
     this.frames = [];
     this.recording = true;
     this.recorder = new PvRecorder(FRAME_LENGTH, -1);
@@ -51,32 +51,17 @@ export class AudioRecorder {
       while (this.recording) {
         try {
           const frame = await this.recorder!.read();
-          this.frames.push(new Int16Array(frame));
+          const arr = new Int16Array(frame);
+          this.frames.push(arr);
+          if (onFrame) {
+            try { onFrame(arr); } catch { /* ignore consumer errors */ }
+          }
         } catch {
           break;
         }
       }
     };
     loop();
-  }
-
-  get isRecording(): boolean {
-    return this.recording;
-  }
-
-  /**
-   * Write the audio captured so far to a temp WAV file without stopping the
-   * recording. Used to feed partial transcripts to the live preview. Returns
-   * null if nothing has been captured yet.
-   */
-  snapshot(): string | null {
-    if (!this.recording) return null;
-    // Copy the frame list synchronously so the capture loop can keep appending.
-    const frames = this.frames.slice();
-    if (frames.length === 0) return null;
-    const filePath = path.join(os.tmpdir(), `voice-input-live-${Date.now()}.wav`);
-    writeWav(filePath, frames);
-    return filePath;
   }
 
   async stop(minSeconds: number, maxSeconds: number): Promise<string | null> {

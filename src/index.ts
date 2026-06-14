@@ -7,7 +7,9 @@ import { TextInserter } from './services/inserter';
 import { getActiveAppName } from './services/window';
 import { logger } from './utils/logger';
 import { FloatingWindow } from './services/floatingWindow';
+import { RealtimeTranscriber } from './services/realtimeTranscriber';
 import { AppState } from './types';
+import * as fs from 'fs';
 import chalk from 'chalk';
 
 interface ProcessAudioOptions {
@@ -15,6 +17,7 @@ interface ProcessAudioOptions {
   appName: string | null;
   translateMode: boolean;
   floatingWindow: FloatingWindow;
+  realtime: RealtimeTranscriber | null;
   onDone: () => void;
 }
 
@@ -23,11 +26,19 @@ async function processAudio(
   transcriber: TranscriptionService,
   formatter: FormatterService,
   inserter: TextInserter,
-  { config, appName, translateMode, floatingWindow, onDone }: ProcessAudioOptions
+  { config, appName, translateMode, floatingWindow, realtime, onDone }: ProcessAudioOptions
 ) {
   const startTime = Date.now();
 
   const audioFile = await recorder.stop(config.minRecordingSeconds, config.maxRecordingSeconds);
+
+  // Finalize the realtime transcript (also closes its connection). Kept even
+  // when we end up aborting so the websocket is always cleaned up.
+  let realtimeText = '';
+  if (realtime) {
+    try { realtimeText = (await realtime.stop()).trim(); } catch { realtimeText = ''; }
+  }
+
   if (!audioFile) {
     await inserter.cancelLive();
     logger.error('Recording too short — try recording for longer');
@@ -35,17 +46,26 @@ async function processAudio(
     return;
   }
 
-  floatingWindow.updateText('Transcribing...');
-  logger.startSpinner('Transcribing...');
-  let transcribed: string;
-  try {
-    transcribed = await transcriber.transcribe(audioFile, translateMode ? 'auto' : config.language);
-    logger.stopSpinner(true, `Transcribed: "${transcribed}"`);
-  } catch (err: any) {
-    await inserter.cancelLive();
-    logger.stopSpinner(false, `Transcription failed: ${err.message}`);
-    onDone();
-    return;
+  let transcribed = realtimeText;
+  if (transcribed) {
+    // The realtime stream already produced the transcript; drop the WAV that
+    // was only kept as a fallback.
+    try { fs.unlinkSync(audioFile); } catch { /* ignore */ }
+    logger.success(`Transcribed (realtime): "${transcribed}"`);
+  } else {
+    // No realtime transcript (disabled or connection failed) — fall back to the
+    // batch Whisper call on the recorded audio.
+    floatingWindow.updateText('Transcribing...');
+    logger.startSpinner('Transcribing...');
+    try {
+      transcribed = await transcriber.transcribe(audioFile, translateMode ? 'auto' : config.language);
+      logger.stopSpinner(true, `Transcribed: "${transcribed}"`);
+    } catch (err: any) {
+      await inserter.cancelLive();
+      logger.stopSpinner(false, `Transcription failed: ${err.message}`);
+      onDone();
+      return;
+    }
   }
 
   if (!transcribed.trim()) {
@@ -101,7 +121,7 @@ async function main() {
       maxRecordingTimer = null;
     }
     state = 'idle';
-    stopLiveTranscription();
+    if (realtime) { realtime.cancel(); realtime = null; }
     inserter.cancelLive().catch(() => {});
     recorder.stop(0, config.maxRecordingSeconds).catch(() => {});
     floatingWindow.updateState('idle');
@@ -127,45 +147,8 @@ async function main() {
   let lastTapTime = 0;
   let startRecordingTimer: ReturnType<typeof setTimeout> | null = null;
   let maxRecordingTimer: ReturnType<typeof setTimeout> | null = null;
-  let liveTimer: ReturnType<typeof setInterval> | null = null;
-
-  // ── Live preview ──────────────────────────────────────────────────
-  // While recording, periodically transcribe the audio captured so far and
-  // type it into the focused field so the user sees text appear as they speak.
-  // The previewed text is replaced by the formatted result once they stop.
-  function startLiveTranscription(liveTranslate: boolean) {
-    if (!config.realtime) return;
-    inserter.beginLive().catch(() => {});
-    let inFlight = false;
-    liveTimer = setInterval(async () => {
-      if (inFlight || state !== 'recording') return;
-      inFlight = true;
-      try {
-        const wav = recorder.snapshot();
-        if (wav) {
-          const partial = await transcriber.transcribe(
-            wav,
-            liveTranslate ? 'auto' : config.language
-          );
-          if (state === 'recording' && partial.trim()) {
-            await inserter.updateLive(partial);
-            floatingWindow.updateText(partial.slice(-60));
-          }
-        }
-      } catch {
-        // Ignore transient transcription errors during live preview.
-      } finally {
-        inFlight = false;
-      }
-    }, config.realtimeIntervalMs);
-  }
-
-  function stopLiveTranscription() {
-    if (liveTimer) {
-      clearInterval(liveTimer);
-      liveTimer = null;
-    }
-  }
+  // Realtime streaming transcriber for the live preview, recreated per recording.
+  let realtime: RealtimeTranscriber | null = null;
 
   function stopAndProcess() {
     if (maxRecordingTimer) {
@@ -173,22 +156,26 @@ async function main() {
       maxRecordingTimer = null;
     }
     state = 'processing';
-    stopLiveTranscription();
     floatingWindow.updateState('processing');
     const appName = activeAppName;
     const currentTranslateMode = translateMode;
+    // Keep `realtime` set so trailing frames captured while the recorder winds
+    // down are still streamed; processAudio finalizes and closes it.
     processAudio(recorder, transcriber, formatter, inserter, {
       config,
       appName,
       translateMode: currentTranslateMode,
       floatingWindow,
+      realtime,
       onDone: () => {
+        realtime = null;
         state = 'idle';
         floatingWindow.updateState('idle');
         const readyLabel = translateMode ? `Ready [TRANSLATE → ${config.translateTarget}]` : 'Ready [TRANSCRIBE]';
         logger.info(readyLabel);
       },
     }).catch(err => {
+      realtime = null;
       logger.error(`Unexpected error: ${err.message}`);
       state = 'idle';
     });
@@ -196,11 +183,37 @@ async function main() {
 
   function startRecording() {
     state = 'recording';
-    recorder.start();
+
+    // Spin up the realtime stream for the live preview. Audio frames are fed
+    // straight from the recorder; partial transcripts are typed into the
+    // focused field as they arrive.
+    if (config.realtime) {
+      inserter.beginLive().catch(() => {});
+      const liveTranslate = translateMode;
+      const language = liveTranslate || config.language === 'auto' ? undefined : config.language;
+      const rt = new RealtimeTranscriber(config.openaiApiKey);
+      realtime = rt;
+      rt.start({
+        model: config.realtimeModel,
+        language,
+        onUpdate: (text) => {
+          if (state === 'recording' && realtime === rt && text) {
+            inserter.updateLive(text).catch(() => {});
+            floatingWindow.updateText(text.slice(-60));
+          }
+        },
+      }).catch((err: any) => {
+        // Connection failed — keep recording; processAudio falls back to Whisper.
+        logger.info(`Realtime preview unavailable: ${err.message}`);
+      });
+    } else {
+      realtime = null;
+    }
+
+    recorder.start((frame) => { realtime?.appendAudio(frame); });
     floatingWindow.updateState('recording');
     logger.recording(hotkeyLabel, translateMode, config.translateTarget);
     getActiveAppName().then(name => { activeAppName = name; }).catch(() => { activeAppName = null; });
-    startLiveTranscription(translateMode);
 
     // Auto-stop at max recording duration
     maxRecordingTimer = setTimeout(() => {
