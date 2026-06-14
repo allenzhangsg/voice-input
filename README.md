@@ -48,6 +48,8 @@ MIN_RECORDING_SECONDS=0.5
 TRANSLATE=false            # Start in translation mode
 TRANSLATE_TARGET=English   # Translation target language
 HOTKEY=                    # Override default hotkey (e.g. "RIGHT ALT")
+REALTIME=true              # Live preview: type partial text while speaking
+REALTIME_INTERVAL_MS=2000  # How often to refresh the live preview
 ```
 
 ## Usage
@@ -82,6 +84,22 @@ The formatter adapts its style based on the active application:
 - **Email** (Mail, Outlook) — formal with proper greeting structure
 - **Code editors** (VS Code, Cursor, Terminal) — precise, suitable for AI prompts
 - **Other apps** — professional default
+
+### Live preview
+
+By default the tool shows text as you speak. While recording, it periodically
+transcribes the audio captured so far and types the partial result directly into
+the focused field, so you watch the text build up in real time. When you stop,
+the previewed text is cleared in one motion and replaced with the final,
+formatted (or translated) result.
+
+This relies on the same paste/keystroke mechanism used for the final insert, so
+keep the target field focused while recording. Cancelling (ESC or the X button)
+removes the previewed text and leaves the field as it was.
+
+Set `REALTIME=false` to disable it and only insert the final formatted text.
+`REALTIME_INTERVAL_MS` controls how often the preview refreshes (minimum 800ms);
+a longer interval means fewer transcription calls.
 
 ### Translation mode
 

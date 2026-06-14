@@ -60,6 +60,25 @@ export class AudioRecorder {
     loop();
   }
 
+  get isRecording(): boolean {
+    return this.recording;
+  }
+
+  /**
+   * Write the audio captured so far to a temp WAV file without stopping the
+   * recording. Used to feed partial transcripts to the live preview. Returns
+   * null if nothing has been captured yet.
+   */
+  snapshot(): string | null {
+    if (!this.recording) return null;
+    // Copy the frame list synchronously so the capture loop can keep appending.
+    const frames = this.frames.slice();
+    if (frames.length === 0) return null;
+    const filePath = path.join(os.tmpdir(), `voice-input-live-${Date.now()}.wav`);
+    writeWav(filePath, frames);
+    return filePath;
+  }
+
   async stop(minSeconds: number, maxSeconds: number): Promise<string | null> {
     this.recording = false;
 

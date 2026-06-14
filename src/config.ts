@@ -20,5 +20,12 @@ export function loadConfig(): Config {
     translateMode: process.env.TRANSLATE === 'true',
     translateTarget: process.env.TRANSLATE_TARGET || 'English',
     hotkey: process.env.HOTKEY || undefined,
+    // Live preview: type partial transcripts into the focused field while
+    // speaking, then replace them with the formatted text. Enabled by default.
+    realtime: process.env.REALTIME ? process.env.REALTIME === 'true' : true,
+    realtimeIntervalMs: Math.max(
+      800,
+      Number.parseInt(process.env.REALTIME_INTERVAL_MS || '2000', 10)
+    ),
   };
 }

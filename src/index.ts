@@ -29,6 +29,7 @@ async function processAudio(
 
   const audioFile = await recorder.stop(config.minRecordingSeconds, config.maxRecordingSeconds);
   if (!audioFile) {
+    await inserter.cancelLive();
     logger.error('Recording too short — try recording for longer');
     onDone();
     return;
@@ -41,12 +42,14 @@ async function processAudio(
     transcribed = await transcriber.transcribe(audioFile, translateMode ? 'auto' : config.language);
     logger.stopSpinner(true, `Transcribed: "${transcribed}"`);
   } catch (err: any) {
+    await inserter.cancelLive();
     logger.stopSpinner(false, `Transcription failed: ${err.message}`);
     onDone();
     return;
   }
 
   if (!transcribed.trim()) {
+    await inserter.cancelLive();
     logger.info('Empty transcript — aborting');
     onDone();
     return;
@@ -97,8 +100,10 @@ async function main() {
       clearTimeout(maxRecordingTimer);
       maxRecordingTimer = null;
     }
-    recorder.stop(0, config.maxRecordingSeconds).catch(() => {});
     state = 'idle';
+    stopLiveTranscription();
+    inserter.cancelLive().catch(() => {});
+    recorder.stop(0, config.maxRecordingSeconds).catch(() => {});
     floatingWindow.updateState('idle');
     logger.info('Recording cancelled');
     const readyLabel = translateMode ? `Ready [TRANSLATE → ${config.translateTarget}]` : 'Ready [TRANSCRIBE]';
@@ -122,6 +127,45 @@ async function main() {
   let lastTapTime = 0;
   let startRecordingTimer: ReturnType<typeof setTimeout> | null = null;
   let maxRecordingTimer: ReturnType<typeof setTimeout> | null = null;
+  let liveTimer: ReturnType<typeof setInterval> | null = null;
+
+  // ── Live preview ──────────────────────────────────────────────────
+  // While recording, periodically transcribe the audio captured so far and
+  // type it into the focused field so the user sees text appear as they speak.
+  // The previewed text is replaced by the formatted result once they stop.
+  function startLiveTranscription(liveTranslate: boolean) {
+    if (!config.realtime) return;
+    inserter.beginLive().catch(() => {});
+    let inFlight = false;
+    liveTimer = setInterval(async () => {
+      if (inFlight || state !== 'recording') return;
+      inFlight = true;
+      try {
+        const wav = recorder.snapshot();
+        if (wav) {
+          const partial = await transcriber.transcribe(
+            wav,
+            liveTranslate ? 'auto' : config.language
+          );
+          if (state === 'recording' && partial.trim()) {
+            await inserter.updateLive(partial);
+            floatingWindow.updateText(partial.slice(-60));
+          }
+        }
+      } catch {
+        // Ignore transient transcription errors during live preview.
+      } finally {
+        inFlight = false;
+      }
+    }, config.realtimeIntervalMs);
+  }
+
+  function stopLiveTranscription() {
+    if (liveTimer) {
+      clearInterval(liveTimer);
+      liveTimer = null;
+    }
+  }
 
   function stopAndProcess() {
     if (maxRecordingTimer) {
@@ -129,6 +173,7 @@ async function main() {
       maxRecordingTimer = null;
     }
     state = 'processing';
+    stopLiveTranscription();
     floatingWindow.updateState('processing');
     const appName = activeAppName;
     const currentTranslateMode = translateMode;
@@ -155,6 +200,7 @@ async function main() {
     floatingWindow.updateState('recording');
     logger.recording(hotkeyLabel, translateMode, config.translateTarget);
     getActiveAppName().then(name => { activeAppName = name; }).catch(() => { activeAppName = null; });
+    startLiveTranscription(translateMode);
 
     // Auto-stop at max recording duration
     maxRecordingTimer = setTimeout(() => {
