@@ -49,7 +49,7 @@ TRANSLATE=false            # Start in translation mode
 TRANSLATE_TARGET=English   # Translation target language
 HOTKEY=                    # Override default hotkey (e.g. "RIGHT ALT")
 REALTIME=true              # Live preview via the OpenAI Realtime API
-REALTIME_MODEL=gpt-4o-transcribe  # gpt-4o-transcribe or gpt-4o-mini-transcribe
+REALTIME_MODEL=gpt-realtime-whisper  # streaming transcription model
 ```
 
 ## Usage
@@ -88,11 +88,12 @@ The formatter adapts its style based on the active application:
 ### Live preview
 
 By default the tool shows text as you speak. While recording, audio is streamed
-to the [OpenAI Realtime API](https://platform.openai.com/docs/guides/realtime-transcription)
-(`gpt-4o-transcribe`), which returns incremental transcripts word by word. Those
-partial words are typed directly into the focused field, so you watch the text
-build up in real time. When you stop, the previewed text is cleared in one motion
-and replaced with the final, formatted (or translated) result.
+to the [OpenAI Realtime API](https://developers.openai.com/api/docs/guides/realtime-transcription)
+using `gpt-realtime-whisper` — a natively streaming model that returns transcript
+deltas as the audio arrives. Those partial words are typed directly into the
+focused field, so you watch the text build up in real time. When you stop, the
+previewed text is cleared in one motion and replaced with the final, formatted
+(or translated) result.
 
 A few notes:
 
@@ -105,9 +106,10 @@ A few notes:
   see the live preview for that take.
 
 Set `REALTIME=false` to disable the live preview entirely and only insert the
-final formatted text. `REALTIME_MODEL` chooses the streaming model
-(`gpt-4o-transcribe` for accuracy, `gpt-4o-mini-transcribe` for lower latency
-and cost).
+final formatted text. `REALTIME_MODEL` chooses the streaming model:
+`gpt-realtime-whisper` (default, lowest latency), or `gpt-4o-transcribe` /
+`gpt-4o-mini-transcribe` for higher accuracy or lower cost (these stream in
+VAD-detected segments rather than continuously).
 
 ### Translation mode
 

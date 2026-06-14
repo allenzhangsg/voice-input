@@ -24,6 +24,6 @@ export function loadConfig(): Config {
     // transcripts into the focused field while speaking, then replace them with
     // the formatted text. Enabled by default.
     realtime: process.env.REALTIME ? process.env.REALTIME === 'true' : true,
-    realtimeModel: process.env.REALTIME_MODEL || 'gpt-4o-transcribe',
+    realtimeModel: process.env.REALTIME_MODEL || 'gpt-realtime-whisper',
   };
 }

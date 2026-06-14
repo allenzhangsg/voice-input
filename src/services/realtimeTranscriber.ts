@@ -100,17 +100,25 @@ export class RealtimeTranscriber {
       ws.on('open', () => {
         const transcription: Record<string, unknown> = { model: opts.model };
         if (opts.language) transcription.language = opts.language;
+        // gpt-realtime-whisper streams deltas continuously and does NOT support
+        // turn detection — it must be null and the buffer committed manually
+        // (done in stop()). Other models use server VAD so they still emit
+        // interim deltas per detected utterance.
+        const turnDetection =
+          opts.model === 'gpt-realtime-whisper'
+            ? null
+            : { type: 'server_vad', threshold: 0.5, prefix_padding_ms: 300, silence_duration_ms: 500 };
         try {
           ws.send(JSON.stringify({
-            type: 'transcription_session.update',
+            type: 'session.update',
             session: {
-              input_audio_format: 'pcm16',
-              input_audio_transcription: transcription,
-              turn_detection: {
-                type: 'server_vad',
-                threshold: 0.5,
-                prefix_padding_ms: 300,
-                silence_duration_ms: 500,
+              type: 'transcription',
+              audio: {
+                input: {
+                  format: { type: 'audio/pcm', rate: REALTIME_RATE },
+                  transcription,
+                  turn_detection: turnDetection,
+                },
               },
             },
           }));
@@ -124,6 +132,8 @@ export class RealtimeTranscriber {
         try { evt = JSON.parse(data.toString()); } catch { return; }
 
         switch (evt.type) {
+          case 'session.created':
+          case 'session.updated':
           case 'transcription_session.created':
           case 'transcription_session.updated':
             if (!this.ready) {
