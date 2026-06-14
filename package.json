@@ -20,10 +20,12 @@
     "get-windows": "^9.2.3",
     "node-global-key-listener": "^0.3.0",
     "openai": "^4.77.0",
-    "ora": "5.4.1"
+    "ora": "5.4.1",
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "@types/node": "^20.17.0",
+    "@types/ws": "^8.18.1",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"
   }

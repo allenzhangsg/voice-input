@@ -20,5 +20,10 @@ export function loadConfig(): Config {
     translateMode: process.env.TRANSLATE === 'true',
     translateTarget: process.env.TRANSLATE_TARGET || 'English',
     hotkey: process.env.HOTKEY || undefined,
+    // Live preview: stream audio to the Realtime API and type partial
+    // transcripts into the focused field while speaking, then replace them with
+    // the formatted text. Enabled by default.
+    realtime: process.env.REALTIME ? process.env.REALTIME === 'true' : true,
+    realtimeModel: process.env.REALTIME_MODEL || 'gpt-realtime-whisper',
   };
 }

@@ -1,6 +1,6 @@
 # voice-input
 
-A CLI tool that turns voice into polished text. Press a hotkey to start recording, press again to stop, then it transcribes (via Whisper), formats (via GPT), and pastes into the active app. Supports translation mode and context-aware formatting based on the target application.
+A CLI tool that turns voice into polished text. Press a hotkey to start recording, press again to stop. As you speak, a live preview of the transcript appears in the focused field (streamed from the OpenAI Realtime API); when you stop, it is replaced with text that has been formatted (via GPT) and pasted into the active app. Supports translation mode and context-aware formatting based on the target application.
 
 ## Requirements
 
@@ -48,6 +48,8 @@ MIN_RECORDING_SECONDS=0.5
 TRANSLATE=false            # Start in translation mode
 TRANSLATE_TARGET=English   # Translation target language
 HOTKEY=                    # Override default hotkey (e.g. "RIGHT ALT")
+REALTIME=true              # Live preview via the OpenAI Realtime API
+REALTIME_MODEL=gpt-realtime-whisper  # streaming transcription model
 ```
 
 ## Usage
@@ -82,6 +84,32 @@ The formatter adapts its style based on the active application:
 - **Email** (Mail, Outlook) — formal with proper greeting structure
 - **Code editors** (VS Code, Cursor, Terminal) — precise, suitable for AI prompts
 - **Other apps** — professional default
+
+### Live preview
+
+By default the tool shows text as you speak. While recording, audio is streamed
+to the [OpenAI Realtime API](https://developers.openai.com/api/docs/guides/realtime-transcription)
+using `gpt-realtime-whisper` — a natively streaming model that returns transcript
+deltas as the audio arrives. Those partial words are typed directly into the
+focused field, so you watch the text build up in real time. When you stop, the
+previewed text is cleared in one motion and replaced with the final, formatted
+(or translated) result.
+
+A few notes:
+
+- The live text is typed via the same paste/keystroke mechanism used for the
+  final insert, so keep the target field focused while recording.
+- Cancelling (ESC or the X button) removes the previewed text and leaves the
+  field as it was.
+- If the realtime connection can't be established, recording continues and the
+  final text is produced with a one-shot Whisper call instead — you just won't
+  see the live preview for that take.
+
+Set `REALTIME=false` to disable the live preview entirely and only insert the
+final formatted text. `REALTIME_MODEL` chooses the streaming model:
+`gpt-realtime-whisper` (default, lowest latency), or `gpt-4o-transcribe` /
+`gpt-4o-mini-transcribe` for higher accuracy or lower cost (these stream in
+VAD-detected segments rather than continuously).
 
 ### Translation mode
 

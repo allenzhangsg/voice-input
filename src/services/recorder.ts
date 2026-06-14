@@ -41,7 +41,7 @@ export class AudioRecorder {
   private frames: Int16Array[] = [];
   private recording = false;
 
-  async start(): Promise<void> {
+  async start(onFrame?: (frame: Int16Array) => void): Promise<void> {
     this.frames = [];
     this.recording = true;
     this.recorder = new PvRecorder(FRAME_LENGTH, -1);
@@ -51,7 +51,11 @@ export class AudioRecorder {
       while (this.recording) {
         try {
           const frame = await this.recorder!.read();
-          this.frames.push(new Int16Array(frame));
+          const arr = new Int16Array(frame);
+          this.frames.push(arr);
+          if (onFrame) {
+            try { onFrame(arr); } catch { /* ignore consumer errors */ }
+          }
         } catch {
           break;
         }
